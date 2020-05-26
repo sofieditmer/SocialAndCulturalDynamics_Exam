@@ -1,0 +1,603 @@
+---
+title: "Exam Project"
+author: "Sofie Ditmer & Sofie Jacobsen"
+date: "4/23/2020"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+setwd("~/Google Drev/Sofie/Cognitive Science/4. semester/Social and Cultural Dynamics in Cognition/Exam/Data")
+```
+
+# PREPROCESSING # 
+```{r}
+# Packages
+library(pacman)
+pacman::p_load(tidyverse, pastecs, WRS2, tidyselect, brms, rethinking, bayesplot)
+
+# Load data
+danish <- read.csv("Fangernes Dilemma.csv", sep=",")
+english <- read.csv("The Prisoner's Dilemma.csv", sep = ",")
+
+# Changing names
+colnames(english)[1] <- "date"
+colnames(english)[2] <- "age"
+colnames(english)[3] <- "gender"
+colnames(english)[4] <- "education"
+colnames(english)[5] <- "cogsci"
+colnames(english)[6] <- "PD_classic"
+colnames(english)[7] <- "PD_member"
+colnames(english)[8] <- "PD_leader"
+colnames(english)[9:38] <- 1:30
+
+colnames(danish)[1] <- "date"
+colnames(danish)[2] <- "age"
+colnames(danish)[3] <- "gender"
+colnames(danish)[4] <- "education"
+colnames(danish)[5] <- "cogsci"
+colnames(danish)[6] <- "PD_classic"
+colnames(danish)[7] <- "PD_member"
+colnames(danish)[8] <- "PD_leader"
+colnames(danish)[9:38] <- 1:30
+
+danish$gender <- str_replace_all(danish$gender, "Kvinde", "Female")
+danish$gender <- str_replace_all(danish$gender, "Mand", "Male")
+danish$education <- str_replace_all(danish$education, "Gymnasial uddannelse", "High School")
+danish$education <- gsub("\\s*\\([^\\)]+\\)","",as.character(danish$education))
+danish$education <- str_replace_all(danish$education, "Mellemlang videregående uddannelse", "Bachelor's degree")
+danish$education <- str_replace_all(danish$education, "Folkeskole/grundskole", "Primary school")
+danish$education <- str_replace_all(danish$education, "Lang videregående uddannelse", "Master's degree")
+danish$education <- str_replace_all(danish$education, "Folkeskole/grundskole", "Primary school")
+danish$education <- str_replace_all(danish$education, "Kort videregående uddannelse eller Erhvervsfaglig uddannelse", "Technical/vocational")
+
+danish$cogsci <- str_replace_all(danish$cogsci, "Ja", "Yes")
+danish$cogsci <- str_replace_all(danish$cogsci, "Nej", "No")
+
+danish$PD_classic <- str_replace_all(danish$PD_classic, "Samarbejde med din sammensvorne og intet tilstå", "Cooperate")
+danish$PD_classic <- str_replace_all(danish$PD_classic, "Stikke din sammensvorne til politiet", "Defect")
+danish$PD_member <- str_replace_all(danish$PD_member, "Samarbejde med din sammensvorne og intet tilstå", "Cooperate")
+danish$PD_member <- str_replace_all(danish$PD_member, "Stikke din sammensvorne til politiet", "Defect")
+danish$PD_leader <- str_replace_all(danish$PD_leader, "Samarbejde med din sammensvorne og intet tilstå", "Cooperate")
+danish$PD_leader <- str_replace_all(danish$PD_leader, "Stikke din sammensvorne til politiet", "Defect")
+
+# Binding dataframes
+d <- rbind(danish, english)
+
+# More renaming
+colnames(d)[9] <- "Q1"
+colnames(d)[10] <- "Q2"
+colnames(d)[11] <- "Q3"
+colnames(d)[12] <- "Q4"
+colnames(d)[13] <- "Q5"
+colnames(d)[14] <- "Q6"
+colnames(d)[15] <- "Q7"
+colnames(d)[16] <- "Q8"
+colnames(d)[17] <- "Q9"
+colnames(d)[18] <- "Q10"
+colnames(d)[19] <- "Q11"
+colnames(d)[20] <- "Q12"
+colnames(d)[21] <- "Q13"
+colnames(d)[22] <- "Q14"
+colnames(d)[23] <- "Q15"
+colnames(d)[24] <- "Q16"
+colnames(d)[25] <- "Q17"
+colnames(d)[26] <- "Q18"
+colnames(d)[27] <- "Q19"
+colnames(d)[28] <- "Q20"
+colnames(d)[29] <- "Q21"
+colnames(d)[30] <- "Q22"
+colnames(d)[31] <- "Q23"
+colnames(d)[32] <- "Q24"
+colnames(d)[33] <- "Q25"
+colnames(d)[34] <- "Q26"
+colnames(d)[35] <- "Q27"
+colnames(d)[36] <- "Q28"
+colnames(d)[37] <- "Q29"
+colnames(d)[38] <- "Q30"
+```
+
+Make SCS score
+```{r}
+# First we make a colum containing the sum of individualist questions and the sum of collectivist questions
+d <- d %>% mutate(ind = Q22 + Q20 + Q25 + Q26 + Q13 + Q15 + Q21 + Q16 + Q14 + Q19 + Q24 + Q29 + Q18 + Q23 + Q17)
+d <- d %>% mutate(col = Q12 + Q1 + Q5 + Q6 + Q8 + Q27 + Q28 + Q11 + Q7 + Q4 + Q3 + Q10 + Q9 + Q2 + Q30)
+
+# To calcualte the SCS score we need to subtract ind from col
+d$SCS_score <- d$ind - d$col
+
+# Make binary SCS 
+d$SCS <- ifelse(d$SCS_score > 0, "individualist", "collectivist")
+
+# If they have a SCS score of 0 we do not want their data
+d$SCS <- ifelse(d$SCS_score == 0, NA, d$SCS)
+
+# Remove the NA
+d <- na.omit(d)
+```
+
+Long format
+```{r}
+# Make ID column
+d$ID <- 1:110
+
+# Make data into long format
+d_long <- d %>%
+ pivot_longer(
+   cols = starts_with("PD"),
+   names_to = "condition",
+   values_to = "choice",
+   values_drop_na = TRUE)
+
+# Select the columns we want
+d_long <- select(d_long, ID, age, gender, education, cogsci, SCS_score, SCS, condition, choice)
+
+# Save data
+write.csv(d_long, file = "data_longformat.csv")
+
+d_clean <- select(d, ID, age, gender, education, cogsci, PD_classic, PD_member, PD_leader, SCS_score, SCS)
+
+write.csv(d_clean, file = "data_wideformat.csv")
+```
+
+# DATA SUMMARY #
+```{r}
+# Age
+mean(d_long$age)
+sd(d_long$age)
+
+# Gender
+d_long$gender <- as.factor(d_long$gender)
+summary(d_long$gender)
+# We have to divide the estimates by 3 because it is long format
+# F: 222/3 = 74, M: 120/3 = 40, Other: 3/3 = 1
+
+# Education
+d_long$education <- as.factor(d_long$education)
+summary(d_long$education)
+# High school: 210 (70), Bachelor: 78 (26), Master: 27 (9), Primary: 12 (4), Technical: 18 (6) 
+
+# Cogsci
+d_long$cogsci <- as.factor(d_long$cogsci)
+summary(d_long$cogsci)
+# Cogsci: 96 (32), Not-cogsci: 249 (83)
+
+# Collectivists vs. individualist
+d_long$SCS_score <- as.integer(d_long$SCS_score)
+mean(d_long$SCS_score)
+# 0.29 (individualist overall)
+d_long$SCS <- as.factor(d_long$SCS)
+summary(d_long$SCS)
+# Coll: 57, Ind: 53
+
+# Conclusion: we can see that there are more collectivists than individualists , but the mean SCS score points towards individualists, which suggests that the individualists have scored high and thus dragging the mean toward individualism even though there are more collectivists
+
+```
+
+# ANALYSIS #
+```{r}
+# Is the binary SCS a better predictor of choice than the continuous SCS score?
+# Filtering the data so we only have the PD_classic dilemma
+classic_dilemma <- select(d, ID, PD_classic, SCS_score, SCS)
+classic_dilemma <- na.omit(classic_dilemma)
+
+# Creating Bayesian formulas for each model: 
+
+# Null/baseline model
+SCS_f0 <- bf(PD_classic ~ 1)
+
+# Binary SCS as predictor
+SCS_f1 <- bf(PD_classic ~ 1 + SCS)
+
+# Continuous SCS as predictor
+SCS_f2 <- bf(PD_classic ~ 1 + SCS_score)
+
+# Model 0: Baseline model # 
+# Priors
+get_prior(SCS_f0, d = classic_dilemma, faily = bernoulli())
+# It only wants an intercept
+
+# Simulating prior in order to find the best 
+p <- rnorm(10000, 0, 1.5)
+dens(p)
+dens(inv_logit(p))
+# We want to assume that the two choices (0 = cooperate, 1 = defect) are just as likely, which is why we want a prior that incorporates this. Using 0 as mean and 1.5 as sd gives us the prior we want
+
+# Defining prior
+prior_f0_SCS <- c(
+  prior(normal(0, 1.5), class = Intercept)
+)
+
+# Testing the model with the defined prior
+m0_SCS_prior <- brm(
+  SCS_f0,
+  classic_dilemma,
+  family = bernoulli(), 
+  prior = prior_f0_SCS,
+  sample_prior = "only",
+  iter = 6000
+)
+
+# Prior predictive check
+y_pred <- posterior_linpred(m0_SCS_prior)
+dens(inv_logit(y_pred))
+# Looks good
+
+# Run full model
+m0_SCS <- brm(
+  SCS_f0,
+  classic_dilemma,
+  family = bernoulli(),
+  prior = prior_f0_SCS,
+  sample_prior = T,
+  iter = 6000
+)
+
+# Model quality check
+summary(m0_SCS)
+
+# Posterior predictive check
+y_pred <- posterior_linpred(m0_SCS)
+dens(inv_logit(y_pred))
+
+# Trace plots
+color_scheme_set("viridis")
+mcmc_trace(m0_SCS,  pars = "b_Intercept") + theme_classic()
+mcmc_rank_overlay(m0_SCS, pars = "b_Intercept") + theme_classic()
+
+# Model 1: SCS model (binary) #
+get_prior(SCS_f1, d = classic_dilemma, family = bernoulli())
+# Beta and intercept
+
+# Simulating different priors
+p <- inv_logit(rnorm(10000, 0, 1.5) + rnorm(10000, 0, 0.3))
+dens(p, adj = 0.1)
+
+# Define priors
+prior_f1_SCS <- c(
+  prior(normal(0, 1.5), class = Intercept),
+  prior(normal(0, 0.1), class = b)
+) 
+
+# Prior model
+m1_SCS_prior <- brm(
+  SCS_f1,
+  classic_dilemma,
+  family = bernoulli(),
+  prior = prior_f1_SCS,
+  sample_prior = "only",
+  iter = 6000
+)
+
+# Prior predictive check
+y_pred <- posterior_linpred(m1_SCS_prior)
+dens(inv_logit(y_pred))
+
+# Full model
+m1_SCS <- brm(
+  SCS_f1,
+  classic_dilemma,
+  family = bernoulli(),
+  prior = prior_f1_SCS,
+  sample_prior = T,
+  iter = 6000
+)
+
+# Quality check
+summary(m1_SCS)
+
+# Posterior predictive checks
+y_pred <- posterior_linpred(m1_SCS)
+dens(inv_logit(y_pred))
+
+# Trace plots and trace rank plots
+color_scheme_set("viridis")
+mcmc_trace(m1_SCS,  pars = "b_Intercept", "b_SCSindividualist") + theme_classic()
+mcmc_rank_overlay(m1_SCS, pars = "b_Intercept", "b_SCSindividualist") + theme_classic()
+
+# Hypothesis-testing
+hypothesis(m1_SCS, "SCSindividualist > 0")
+        
+# Model 2: Continuous SCS score predictor # 
+get_prior(SCS_f2, d = classic_dilemma, family = bernoulli())
+# Beta and intercept
+
+# Simulating different priors
+p <- inv_logit(rnorm(10000, 0, 1.5) + rnorm(10000, 0, 0.01))
+dens(p, adj = 0.1)
+
+# Define priors
+prior_f2_SCS <- c(
+  prior(normal(0, 1.5), class = Intercept),
+  prior(normal(0, 0.1), class = b)
+) 
+
+# Prior model
+m2_SCS_prior <- brm(
+  SCS_f2,
+  classic_dilemma,
+  family = bernoulli(),
+  prior = prior_f2_SCS,
+  sample_prior = "only",
+  iter = 6000
+)
+
+# Prior predictive check
+y_pred <- posterior_linpred(m2_prior_SCS)
+dens(inv_logit(y_pred))
+
+# Full model
+m2_SCS <- brm(
+  SCS_f2,
+  classic_dilemma,
+  family = bernoulli(),
+  prior = prior_f2_SCS,
+  sample_prior = T,
+  iter = 6000
+)
+
+# Quality check
+summary(m2_SCS)
+
+# Posterior predictive checks
+y_pred <- posterior_linpred(m2_SCS)
+dens(inv_logit(y_pred))
+# The posterior peaks at 20%, which means that it is much more likely that a participant will cooperate than defect.
+
+# Trace plots and trace rank plots
+color_scheme_set("viridis")
+mcmc_trace(m2_SCS,  pars = "b_Intercept", "b_SCS_score") + theme_classic()
+mcmc_rank_overlay(m2_SCS, pars = "b_Intercept", "b_SCS_score") + theme_classic()
+
+# Hypothesis-testing
+hypothesis(m2_SCS, "SCS_score > 0")
+```
+
+MODEL COMPARISON
+```{r}
+# Add criterion
+m0_SCS <- add_criterion(m0_SCS, criterion = c("bayes_R2", "loo"))
+m1_SCS <- add_criterion(m1_SCS, criterion = c("bayes_R2", "loo"))
+m2_SCS <- add_criterion(m2_SCS, criterion = c("bayes_R2", "loo"))
+
+# Model comaprison
+loo_compare(m0_SCS, m1_SCS, m2_SCS) # m0 is the best overall
+loo_model_weights(m0_SCS, m1_SCS, m2_SCS)
+
+loo_compare(m1_SCS, m2_SCS)
+loo_model_weights(m1_SCS, m2_SCS)
+
+# Conclusion: m0 is the best model for predicting choice
+```
+
+NEW MODELS
+```{r}
+# Best model from before
+SCS_f0 <- bf(choice ~ 1 + (1 | ID))
+
+# Priors
+get_prior(SCS_f0, d = d_long, family = bernoulli())
+
+# Simulating prior in order to find the best 
+p <- rnorm(10000, 0, 1.5) + rnorm(10000, 0, 0.1)
+dens(p)
+dens(inv_logit(p))
+
+# Defining prior
+prior_f0 <- c(
+  prior(normal(0, 1.5), class = Intercept),
+  prior(normal(0, 0.1), class = sd)
+)
+
+# Testing the model with the defined prior
+m0_prior <- brm(
+  SCS_f0,
+  d_long,
+  family = bernoulli(), 
+  prior = prior_f0,
+  sample_prior = "only"
+)
+
+# Prior predictive check
+y_pred <- posterior_linpred(m0_prior)
+dens(inv_logit(y_pred))
+
+# Run full model
+m0 <- brm(
+  SCS_f0,
+  d_long,
+  family = bernoulli(),
+  prior = prior_f0,
+  sample_prior = T,
+  iter = 6000
+)
+
+# Model quality check
+summary(m0)
+
+# Posterior predictive check
+y_pred <- posterior_linpred(m0)
+dens(inv_logit(y_pred))
+# There is a bias for cooperating, which is also what we saw when looking at the data
+
+# Trace plots
+color_scheme_set("viridis")
+mcmc_trace(m0,  pars = "b_Intercept") + theme_classic()
+mcmc_rank_overlay(m0, pars = "b_Intercept") + theme_classic()
+
+# Hypothesis-testing
+plot(hypothesis(m0, "Intercept > 0"))
+
+# Next model # 
+f1 <- bf(choice ~ 1 + condition + (1 | ID))
+
+get_prior(f1, d = d_long, family = bernoulli())
+
+p <- rnorm(10000, 0, 1) + rnorm(10000, 0, 0.117) + rnorm(10000, 0, 0.1)
+dens(p)
+dens(inv_logit(p))
+
+prior_f1 <- c(
+  prior(normal(0, 1.5), class = Intercept),
+  prior(normal(0, 0.4), class = b),
+  prior(normal(0, 0.1), class = sd)
+)
+
+m1_prior <- brm(
+  f1,
+  d_long,
+  family = bernoulli(), 
+  prior = prior_f1,
+  sample_prior = "only"
+)
+
+y_pred <- posterior_linpred(m0_prior)
+dens(inv_logit(y_pred))
+
+m1 <- brm(
+  f1,
+  d_long,
+  family = bernoulli(),
+  prior = prior_f1,
+  sample_prior = T,
+  iter = 6000
+)
+
+summary(m1)
+inv_logit(-2.11)
+inv_logit(-0.08)
+inv_logit(-0.07)
+inv_logit(-2.12-1.59)
+inv_logit(-1.59)
+inv_logit(-2.12)
+
+y_pred <- posterior_linpred(m1)
+dens(inv_logit(y_pred))
+
+color_scheme_set("viridis")
+mcmc_trace(m1, pars = "b_conditionPD_leader", "b_conditionPD_member") + theme_classic()
+mcmc_rank_overlay(m1, pars = "b_conditionPD_leader", "b_conditionPD_member") + theme_classic()
+
+# Hypothesis-testing
+hypothesis(m1, "Intercept < 0")
+plot(hypothesis(m1, "Intercept < 0"))
+inv_logit(-1.85) # This means that 13% defect in the baseline condition
+
+plot(hypothesis(m1, "conditionPD_member < 0"))
+hypothesis(m1, "conditionPD_member < 0")
+inv_logit(-1.85-0.56) # This means that 8% defect in the member-condition
+
+plot(hypothesis(m1, "conditionPD_leader < 0"))
+hypothesis(m1, "conditionPD_leader < 0")
+inv_logit(-1.85-0.62) # This means that 7% defect in the leader-condition
+
+plot(hypothesis(m1, "conditionPD_member < conditionPD_leader"))
+hypothesis(m1,"conditionPD_member < conditionPD_leader") # The estimate is low and the CIs cross zero, suggesting that people do not defect more in the member condition compared to the leader condition.
+inv_logit(0.06) # 51% - thus there is very slight evidence that people defect more in the member condition compared to the leader condition. 
+
+conditional_effects(m1) # people generally defect more in the classic condition compared to the two others
+
+# f2
+f2 <- bf(choice ~ 1 + condition + SCS + (1 | ID))
+
+get_prior(f2, d = d_long, family = bernoulli())
+
+p <- rnorm(10000, 0, 1.5) + rnorm(10000, 0, 0.4) + rnorm(10000, 0, 0.1)
+dens(p)
+dens(inv_logit(p))
+
+prior_f2 <- c(
+  prior(normal(0, 1.5), class = Intercept),
+  prior(normal(0, 0.4), class = b),
+  prior(normal(0, 0.1), class = sd)
+)
+
+m2_prior <- brm(
+  f2,
+  d_long,
+  family = bernoulli(), 
+  prior = prior_f2,
+  sample_prior = "only"
+)
+
+y_pred <- posterior_linpred(m2_prior)
+dens(inv_logit(y_pred))
+
+m2 <- brm(
+  f2,
+  d_long,
+  family = bernoulli(),
+  prior = prior_f2,
+  sample_prior = T,
+  iter = 6000
+)
+
+summary(m2)
+
+y_pred <- posterior_linpred(m2)
+dens(inv_logit(y_pred))
+
+color_scheme_set("viridis")
+mcmc_trace(m2,  pars = "b_conditionPD_leader", "b_SCS") + theme_classic()
+mcmc_rank_overlay(m2, pars = "b_conditionPD_leader", "b_SCS") + theme_classic()
+
+# f3
+f3 <- bf(choice ~ 1 + SCS * condition + (1 | ID))
+
+get_prior(f3, d = d_long, family = bernoulli())
+
+p <- rnorm(10000, 0, 1.5) + rnorm(10000, 0, 0.4) + rnorm(10000, 0, 0.1)
+dens(p)
+dens(inv_logit(p))
+
+prior_f3 <- c(
+  prior(normal(0, 1.5), class = Intercept),
+  prior(normal(0, 0.4), class = b),
+  prior(normal(0, 0.1), class = sd)
+)
+
+m3_prior <- brm(
+  f3,
+  d_long,
+  family = bernoulli(), 
+  prior = prior_f3,
+  sample_prior = "only"
+)
+
+y_pred <- posterior_linpred(m3_prior)
+dens(inv_logit(y_pred))
+
+m3 <- brm(
+  f3,
+  d_long,
+  family = bernoulli(),
+  prior = prior_f3,
+  sample_prior = T,
+  iter = 6000
+)
+
+summary(m3)
+
+y_pred <- posterior_linpred(m3)
+dens(inv_logit(y_pred))
+
+color_scheme_set("viridis")
+mcmc_trace(m3,  pars = "b_conditionPD_member", "b_SCS") + theme_classic()
+mcmc_rank_overlay(m3, pars = "b_conditionPD_member", "b_SCS") + theme_classic()
+```
+
+MODEL COMPARISON
+```{r}
+# MODEL COMPARISON # 
+m0 <- add_criterion(m0, criterion = c("bayes_R2", "loo"))
+m1 <- add_criterion(m1, criterion = c("bayes_R2", "loo"))
+m2 <- add_criterion(m2, criterion = c("bayes_R2", "loo"))
+m3 <- add_criterion(m3, criterion = c("bayes_R2", "loo"))
+
+loo_compare(m0, m1, m2, m3)
+loo_model_weights(m0, m1, m2, m3)
+
+```
+
